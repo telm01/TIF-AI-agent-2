@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Language Game</title>
+<style>
+  :root{
+    --bg-top:#1b2340; --bg-bottom:#2a1a45; --panel:#1a2036; --panel-border:rgba(255,255,255,.08);
+    --ink:#F4F6FA; --ink-soft:#A9B3C9; --teal:#5DD8F0; --lilac:#9C6FE0;
+    --success:#6FE0A0; --success-bg:rgba(111,224,160,.12);
+    --try-again:#F0B15D; --try-again-bg:rgba(240,177,93,.12);
+    --hint-bg:rgba(156,111,224,.14); --hint-border:rgba(156,111,224,.5);
+    --border:rgba(255,255,255,.14); --focus:#5DD8F0;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0; padding:0; width:100vw; height:100vh; overflow:hidden;
+    background:linear-gradient(160deg,#24345e 0%,var(--bg-top) 40%,var(--bg-bottom) 100%);
+    color:var(--ink); font-family:'Trebuchet MS',Verdana,'Segoe UI',sans-serif; font-size:12px;
+  }
+  .app{
+    position:absolute; left:0; top:0; transform-origin:0 0;
+    width:320px; height:240px; padding:4px 6px; display:flex; flex-direction:column; gap:3px;
+  }
+  .controls{
+    display:flex; flex-wrap:nowrap; gap:4px; align-items:center; justify-content:space-between;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; padding:3px 4px; flex:none;
+  }
+  .control-group{display:flex; align-items:center}
+  .control-group>label:not(.icon-toggle){position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap}
+  select,.icon-toggle{font-family:inherit; font-size:11px; height:24px; padding:0 3px; border-radius:6px; border:1px solid var(--border); background:#10152a; color:var(--ink)}
+  #mode-select{width:128px} #difficulty-select{width:70px}
+  .icon-toggle{display:flex; align-items:center; justify-content:center; width:28px; padding:0; cursor:pointer; font-size:14px}
+  .icon-toggle input{position:absolute; opacity:0; width:1px; height:1px}
+  .icon-toggle:focus-within{outline:2px solid var(--focus); outline-offset:1px}
+  select:focus,button:focus,.odd-card:focus{outline:2px solid var(--focus); outline-offset:1px}
+  .btn{font-family:inherit; font-size:11px; font-weight:bold; height:24px; padding:0 10px; border-radius:8px; border:none; cursor:pointer; background:linear-gradient(90deg,var(--teal),var(--lilac)); color:#10152a}
+  .btn.secondary{background:transparent; color:var(--teal); border:1px solid var(--teal); padding:0 8px; font-size:13px; width:28px}
+  .btn.ghost{background:transparent; color:var(--lilac); border:1px solid var(--lilac)}
+  .btn:active{transform:scale(.96)}
+  .status-bar{display:flex; justify-content:center; align-items:center; gap:6px; font-size:11px; color:var(--ink-soft); flex:none; height:14px}
+  .progress-track{width:110px; height:6px; background:rgba(255,255,255,.1); border-radius:4px; overflow:hidden}
+  .progress-fill{height:100%; width:0; background:linear-gradient(90deg,var(--teal),var(--lilac)); transition:width .3s}
+  .message-banner{text-align:center; font-size:12px; font-weight:bold; color:var(--teal); height:16px; line-height:16px; white-space:nowrap; overflow:hidden; flex:none}
+  #play-area{flex:1; display:flex; flex-direction:column; gap:3px; min-height:0}
+  .prompt{text-align:center; font-size:11px; margin:0; color:var(--ink); flex:none}
+  .hint-box{display:none; text-align:center; background:var(--hint-bg); border:1px solid var(--hint-border); border-radius:6px; padding:1px 6px; font-size:10px; color:#D9CBFA; flex:none}
+  .hint-box.visible{display:block}
+  .game-panel{flex:1; min-height:0; overflow:hidden; background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; padding:5px; display:flex; flex-direction:column; justify-content:center}
+  .next-row{display:flex; justify-content:center; gap:6px; flex:none}
+  .choices-row{display:flex; flex-wrap:wrap; justify-content:center; gap:6px}
+  .choice-btn{min-width:40px; height:36px; padding:0 6px; border-radius:8px; border:2px solid var(--border); background:#10152a; color:var(--ink); font-size:19px; font-weight:bold; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center}
+  .correct{border-color:var(--success)!important; background:var(--success-bg)!important}
+  .shake{border-color:var(--try-again)!important; background:var(--try-again-bg)!important}
+  @media (prefers-reduced-motion:no-preference){.shake{animation:shake .4s ease}}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+  .celebration{flex:1; text-align:center; background:var(--panel); border:2px solid var(--success); border-radius:10px; padding:20px 8px}
+  .celebration .big-emoji{font-size:32px}
+  .celebration h2{color:var(--teal); margin:4px 0; font-size:16px}
+  .celebration p{color:var(--ink-soft); margin:0 0 10px; font-size:11px}
+
+  #picture-mode-ui{display:flex; align-items:center; gap:8px}
+  .picture-box{flex:none; width:64px; height:64px; border-radius:10px; background:#10152a; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:38px}
+  .word-choices{flex:1; display:grid; grid-template-columns:1fr 1fr; gap:4px}
+  .word-btn{font-family:inherit; font-size:12px; font-weight:bold; height:26px; padding:0 4px; border-radius:7px; border:2px solid var(--border); background:#10152a; color:var(--ink); cursor:pointer}
+  .word-row{display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin-bottom:8px}
+  .letter-box{width:30px; height:36px; border-radius:6px; background:#10152a; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:19px; font-weight:bold}
+  .letter-box.blank{background:var(--hint-bg); border-color:var(--hint-border); color:var(--lilac)}
+  .letter-box.filled-correct{background:var(--success-bg); border-color:var(--success)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="controls">
+    <div class="control-group">
+      <label for="mode-select">Game</label>
+      <select id="mode-select">
+        <option value="picture">Name the picture</option>
+        <option value="letter">Missing letter</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="difficulty-select">Level</label>
+      <select id="difficulty-select">
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="sound-toggle">Sound</label>
+      <label class="icon-toggle" for="sound-toggle" title="Sound">
+        <input type="checkbox" id="sound-toggle" aria-label="Sound">
+        <span id="sound-label">🔇</span>
+      </label>
+    </div>
+    <div class="control-group">
+      <button class="btn secondary" id="restart-btn" aria-label="Restart">🔄</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span id="progress-text">Problem 1 / 5</span>
+    <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" id="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+
+  <div class="message-banner" id="message-banner" aria-live="polite"></div>
+
+  <div id="play-area">
+    <p class="prompt" id="prompt-text"></p>
+    <div class="hint-box" id="hint-box"></div>
+    <div class="game-panel">
+      <div id="picture-mode-ui">
+        <div class="picture-box" id="picture-box"></div>
+        <div class="word-choices" id="word-choices"></div>
+      </div>
+      <div id="letter-mode-ui" style="display:none;">
+        <div class="word-row" id="word-row"></div>
+        <div class="choices-row" id="letter-choices-row"></div>
+      </div>
+    </div>
+    <div class="next-row">
+      <button class="btn ghost" id="hint-btn">💡 Hint</button>
+      <button class="btn" id="next-btn" style="display:none;">Next →</button>
+    </div>
+  </div>
+
+  <div class="celebration" id="celebration" style="display:none;" role="status">
+    <div class="big-emoji" aria-hidden="true">🎉</div>
+    <h2>Great job!</h2>
+    <p>You solved all 5 problems.</p>
+    <button class="btn" id="play-again-btn">Play again</button>
+  </div>
+</div>
+
+<script>
+  // Scale the 320x240 layout up to fill the whole window.
+  // STRETCH = true fills edge to edge; false keeps proportions and centres it.
+  const STRETCH = false;
+  function fitToScreen() {
+    const app = document.querySelector('.app');
+    const sx = window.innerWidth / 320, sy = window.innerHeight / 240;
+    if (STRETCH) { app.style.transform = `scale(${sx}, ${sy})`; }
+    else {
+      const s = Math.min(sx, sy);
+      const x = (window.innerWidth - 320 * s) / 2, y = (window.innerHeight - 240 * s) / 2;
+      app.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+    }
+  }
+  window.addEventListener('resize', fitToScreen);
+  fitToScreen();
+
+  // ---- Bridge to the local Flask server (server.py) ----
+  const BRIDGE_URL = 'http://localhost:5000/update';
+  function reportProblemToServer(solvedFlag) {
+    if (!currentRound) return;
+    fetch(BRIDGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: currentRound.type, prompt: promptText.textContent,
+        hint: currentRound.hint, answer: currentRound.answer, solved: !!solvedFlag,
+      }),
+    }).catch(() => {});
+  }
+
+  const TOTAL_ROUNDS = 5;
+  const $ = (id) => document.getElementById(id);
+  const modeSelect = $('mode-select'), difficultySelect = $('difficulty-select');
+  const soundToggle = $('sound-toggle'), soundLabel = $('sound-label');
+  const restartBtn = $('restart-btn'), playAgainBtn = $('play-again-btn');
+  const progressText = $('progress-text'), progressFill = $('progress-fill'), progressBar = $('progress-bar');
+  const messageBanner = $('message-banner'), promptText = $('prompt-text');
+  const hintBox = $('hint-box'), hintBtn = $('hint-btn'), nextBtn = $('next-btn');
+  const playArea = $('play-area'), celebration = $('celebration');
+
+  let currentRoundIndex = 0, currentRound = null, solved = false, audioCtx = null;
+
+  function focusFirstChoice(container) {
+    const el = container.querySelector('button:not([disabled]), [role="button"]:not(.disabled)');
+    if (el) el.focus();
+  }
+  function attachRovingNav(container) {
+    container.addEventListener('keydown', (e) => {
+      if (!['ArrowRight','ArrowDown','ArrowLeft','ArrowUp'].includes(e.key)) return;
+      const items = Array.from(container.querySelectorAll('button:not([disabled]), [role="button"]:not(.disabled)'));
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      const fwd = e.key === 'ArrowRight' || e.key === 'ArrowDown';
+      const n = fwd ? (i < 0 ? 0 : (i + 1) % items.length)
+                    : (i < 0 ? items.length - 1 : (i - 1 + items.length) % items.length);
+      e.preventDefault();
+      items[n].focus();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'select') return;
+    if (e.key === 'Escape') { e.preventDefault(); window.location.href = 'index_en.html'; }
+    else if (e.key === 'Delete') { e.preventDefault(); renderRound(); }
+  });
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  function playTone(freqs, duration) {
+    if (!soundToggle.checked) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = audioCtx.currentTime;
+      freqs.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.02 + i * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration + i * 0.08);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.08); osc.stop(now + duration + i * 0.08 + 0.05);
+      });
+    } catch (e) {}
+  }
+  const playSuccessSound = () => playTone([523.25, 659.25, 783.99], 0.25);
+  const playTrySound = () => playTone([349.23], 0.2);
+  soundToggle.addEventListener('change', () => { soundLabel.textContent = soundToggle.checked ? '🔊' : '🔇'; });
+
+  function onSolved() {
+    solved = true;
+    messageBanner.textContent = 'Great job! 🌟';
+    playSuccessSound();
+    hintBtn.style.display = 'none';
+    nextBtn.style.display = 'inline-block';
+    nextBtn.focus();
+    reportProblemToServer(true);
+  }
+  function onWrong(el) {
+    el.classList.add('shake');
+    messageBanner.textContent = 'Try again, you can do it!';
+    playTrySound();
+    setTimeout(() => el.classList.remove('shake'), 450);
+  }
+
+  // ================= game-specific code =================
+
+  // Vocabulary stays in Mongolian on purpose: it is the content being taught.
+  const VOCAB = [
+    { word: "нохой", emoji: "🐶" }, { word: "муур", emoji: "🐱" }, { word: "туулай", emoji: "🐰" },
+    { word: "заан", emoji: "🐘" }, { word: "арслан", emoji: "🦁" }, { word: "мэлхий", emoji: "🐸" },
+    { word: "шувуу", emoji: "🐦" }, { word: "алим", emoji: "🍎" }, { word: "гадил", emoji: "🍌" },
+    { word: "жүрж", emoji: "🍊" }, { word: "тарвас", emoji: "🍉" }, { word: "машин", emoji: "🚗" },
+    { word: "автобус", emoji: "🚌" }, { word: "дугуй", emoji: "🚲" }, { word: "онгоц", emoji: "✈️" },
+    { word: "нар", emoji: "☀️" }, { word: "бороо", emoji: "🌧️" }, { word: "үүл", emoji: "☁️" },
+    { word: "цас", emoji: "❄️" }, { word: "ном", emoji: "📖" }, { word: "мод", emoji: "🌳" },
+    { word: "гэр", emoji: "🏠" },
+  ];
+  const LETTER_WORDS_EASY = ["нар", "цас", "мод", "ном", "гар", "ус", "гал"];
+  const LETTER_WORDS_MEDIUM = ["нохой", "муур", "алим", "заан", "шувуу", "жүрж"];
+  const LETTER_WORDS_HARD = ["туулай", "мэлхий", "автобус", "тарвас", "арслан"];
+  const LETTER_POOL = "абвгдежзийклмноөпрстуүфхцчшья".split("");
+  const ROUND_BANNER = "Let's think carefully!";
+
+  const pictureUI = $('picture-mode-ui'), letterUI = $('letter-mode-ui');
+  const pictureBox = $('picture-box'), wordChoices = $('word-choices');
+  const wordRow = $('word-row'), letterChoicesRow = $('letter-choices-row');
+  attachRovingNav(wordChoices);
+  attachRovingNav(letterChoicesRow);
+
+  function buildPictureRound(d) {
+    const n = d === 'easy' ? 3 : d === 'medium' ? 4 : 5;
+    const correct = VOCAB[Math.floor(Math.random() * VOCAB.length)];
+    const others = shuffle(VOCAB.filter(v => v.word !== correct.word)).slice(0, n - 1);
+    return {
+      type: 'picture', emoji: correct.emoji, answer: correct.word,
+      choices: shuffle([correct, ...others]).map(c => c.word),
+      hint: `The name of this picture starts the same way as "${correct.word}".`,
+    };
+  }
+  function buildLetterRound(d) {
+    const list = d === 'easy' ? LETTER_WORDS_EASY : d === 'medium' ? LETTER_WORDS_MEDIUM : LETTER_WORDS_HARD;
+    const word = list[Math.floor(Math.random() * list.length)];
+    const letters = Array.from(word);
+    const blankIndex = Math.floor(Math.random() * letters.length);
+    const correct = letters[blankIndex];
+    const n = d === 'easy' ? 3 : 4;
+    const others = shuffle(LETTER_POOL.filter(l => l !== correct)).slice(0, n - 1);
+    return {
+      type: 'letter', word, letters, blankIndex, answer: correct, choices: shuffle([correct, ...others]),
+      hint: `Say the word out loud and listen for the missing sound: "${word}".`,
+    };
+  }
+  function generateRound() {
+    const d = difficultySelect.value;
+    return modeSelect.value === 'picture' ? buildPictureRound(d) : buildLetterRound(d);
+  }
+
+  function drawRound(r) {
+    if (r.type === 'picture') {
+      pictureUI.style.display = 'flex';
+      letterUI.style.display = 'none';
+      promptText.textContent = 'What is this?';
+      pictureBox.textContent = r.emoji;
+      wordChoices.innerHTML = '';
+      r.choices.forEach(word => {
+        const btn = document.createElement('button');
+        btn.className = 'word-btn';
+        btn.textContent = word;
+        btn.addEventListener('click', () => {
+          if (solved) return;
+          if (word === r.answer) {
+            btn.classList.add('correct');
+            wordChoices.querySelectorAll('.word-btn').forEach(b => b.disabled = true);
+            onSolved();
+          } else onWrong(btn);
+        });
+        wordChoices.appendChild(btn);
+      });
+      focusFirstChoice(wordChoices);
+    } else {
+      pictureUI.style.display = 'none';
+      letterUI.style.display = 'block';
+      promptText.textContent = 'Find the missing letter';
+      wordRow.innerHTML = '';
+      r.letters.forEach((letter, i) => {
+        const box = document.createElement('div');
+        if (i === r.blankIndex) { box.className = 'letter-box blank'; box.id = 'blank-letter-box'; box.textContent = '?'; }
+        else { box.className = 'letter-box'; box.textContent = letter; }
+        wordRow.appendChild(box);
+      });
+      letterChoicesRow.innerHTML = '';
+      r.choices.forEach(letter => {
+        const btn = document.createElement('button');
+        btn.className = 'choice-btn';
+        btn.textContent = letter;
+        btn.setAttribute('aria-label', `Select the letter "${letter}"`);
+        btn.addEventListener('click', () => {
+          if (solved) return;
+          if (letter === r.answer) {
+            const blank = $('blank-letter-box');
+            blank.textContent = letter;
+            blank.classList.remove('blank');
+            blank.classList.add('filled-correct');
+            btn.classList.add('correct');
+            letterChoicesRow.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+            onSolved();
+          } else onWrong(btn);
+        });
+        letterChoicesRow.appendChild(btn);
+      });
+      focusFirstChoice(letterChoicesRow);
+    }
+  }
+
+  // ================= shared round flow =================
+  function renderRound() {
+    solved = false;
+    hintBox.classList.remove('visible');
+    hintBox.textContent = '';
+    nextBtn.style.display = 'none';
+    hintBtn.style.display = '';
+    messageBanner.textContent = ROUND_BANNER;
+    currentRound = generateRound();
+    drawRound(currentRound);
+    updateProgress();
+    reportProblemToServer(false);
+  }
+  function updateProgress() {
+    progressText.textContent = `Problem ${currentRoundIndex + 1} / ${TOTAL_ROUNDS}`;
+    progressFill.style.width = (currentRoundIndex / TOTAL_ROUNDS) * 100 + '%';
+    progressBar.setAttribute('aria-valuenow', currentRoundIndex);
+  }
+  function showCelebration() {
+    playArea.style.display = 'none';
+    messageBanner.textContent = '';
+    celebration.style.display = 'block';
+    playAgainBtn.focus();
+  }
+  function startSession() {
+    currentRoundIndex = 0;
+    playArea.style.display = 'flex';
+    celebration.style.display = 'none';
+    renderRound();
+  }
+  hintBtn.addEventListener('click', () => {
+    hintBox.textContent = '💡 ' + currentRound.hint;
+    hintBox.classList.add('visible');
+  });
+  nextBtn.addEventListener('click', () => {
+    currentRoundIndex++;
+    if (currentRoundIndex >= TOTAL_ROUNDS) { progressFill.style.width = '100%'; showCelebration(); }
+    else renderRound();
+  });
+  restartBtn.addEventListener('click', startSession);
+  playAgainBtn.addEventListener('click', startSession);
+  modeSelect.addEventListener('change', startSession);
+  difficultySelect.addEventListener('change', startSession);
+  startSession();
+</script>
+</body>
+</html>
+
