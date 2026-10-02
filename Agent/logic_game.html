@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logic Game: Patterns &amp; Groups</title>
+<style>
+  :root{
+    --bg-top:#1b2340; --bg-bottom:#2a1a45; --panel:#1a2036; --panel-border:rgba(255,255,255,.08);
+    --ink:#F4F6FA; --ink-soft:#A9B3C9; --teal:#5DD8F0; --lilac:#9C6FE0;
+    --success:#6FE0A0; --success-bg:rgba(111,224,160,.12);
+    --try-again:#F0B15D; --try-again-bg:rgba(240,177,93,.12);
+    --hint-bg:rgba(156,111,224,.14); --hint-border:rgba(156,111,224,.5);
+    --border:rgba(255,255,255,.14); --focus:#5DD8F0;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0; padding:0; width:100vw; height:100vh; overflow:hidden;
+    background:linear-gradient(160deg,#24345e 0%,var(--bg-top) 40%,var(--bg-bottom) 100%);
+    color:var(--ink); font-family:'Trebuchet MS',Verdana,'Segoe UI',sans-serif; font-size:12px;
+  }
+  .app{
+    position:absolute; left:0; top:0; transform-origin:0 0;
+    width:320px; height:240px; padding:4px 6px;
+    display:flex; flex-direction:column; gap:3px;
+  }
+  header,.kb-hint{display:none}
+
+  /* controls: one compact row */
+  .controls{
+    display:flex; flex-wrap:nowrap; gap:4px; align-items:center; justify-content:space-between;
+    background:var(--panel); border:1px solid var(--panel-border); border-radius:8px; padding:3px 4px;
+    flex:none;
+  }
+  .control-group{display:flex; align-items:center}
+  .control-group>label:not(.icon-toggle){
+    position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap;
+  }
+  select,.icon-toggle{
+    font-family:inherit; font-size:11px; height:24px; padding:0 3px;
+    border-radius:6px; border:1px solid var(--border); background:#10152a; color:var(--ink);
+  }
+  #mode-select{width:128px} #difficulty-select{width:70px}
+  .icon-toggle{display:flex; align-items:center; justify-content:center; width:28px; padding:0; cursor:pointer; font-size:14px}
+  .icon-toggle input{position:absolute; opacity:0; width:1px; height:1px}
+  .icon-toggle:focus-within{outline:2px solid var(--focus); outline-offset:1px}
+
+  select:focus,button:focus,.odd-card:focus{outline:2px solid var(--focus); outline-offset:1px}
+
+  .btn{
+    font-family:inherit; font-size:11px; font-weight:bold; height:24px; padding:0 10px;
+    border-radius:8px; border:none; cursor:pointer;
+    background:linear-gradient(90deg,var(--teal),var(--lilac)); color:#10152a;
+  }
+  .btn.secondary{background:transparent; color:var(--teal); border:1px solid var(--teal); padding:0 8px; font-size:13px; width:28px}
+  .btn.ghost{background:transparent; color:var(--lilac); border:1px solid var(--lilac)}
+  .btn:active{transform:scale(.96)}
+
+  .status-bar{display:flex; justify-content:center; align-items:center; gap:6px; font-size:11px; color:var(--ink-soft); flex:none; height:14px}
+  .progress-track{width:110px; height:6px; background:rgba(255,255,255,.1); border-radius:4px; overflow:hidden}
+  .progress-fill{height:100%; width:0; background:linear-gradient(90deg,var(--teal),var(--lilac)); transition:width .3s}
+
+  .message-banner{text-align:center; font-size:12px; font-weight:bold; color:var(--teal); height:16px; line-height:16px; white-space:nowrap; overflow:hidden; flex:none}
+  #play-area{flex:1; display:flex; flex-direction:column; gap:3px; min-height:0}
+  .prompt{text-align:center; font-size:11px; margin:0; color:var(--ink); flex:none}
+
+  .hint-box{
+    display:none; text-align:center; background:var(--hint-bg); border:1px solid var(--hint-border);
+    border-radius:6px; padding:1px 6px; font-size:10px; color:#D9CBFA; flex:none;
+  }
+  .hint-box.visible{display:block}
+
+  .game-panel{
+    flex:1; min-height:0; background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:8px; padding:5px; display:flex; flex-direction:column; justify-content:center;
+  }
+  #pattern-mode-ui,#odd-mode-ui{width:100%}
+
+  .sequence-row{display:flex; flex-wrap:wrap; justify-content:center; gap:3px; margin-bottom:6px}
+  .seq-box{
+    width:30px; height:30px; border-radius:6px; background:#10152a; border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-size:16px; line-height:1;
+  }
+  .seq-box.blank{background:var(--hint-bg); border-color:var(--hint-border); color:var(--lilac); font-weight:bold}
+  .seq-box.filled-correct{background:var(--success-bg); border-color:var(--success)}
+
+  .choices-row{display:flex; flex-wrap:nowrap; justify-content:center; gap:8px}
+  .choice-btn{
+    width:44px; height:40px; border-radius:8px; border:2px solid var(--border); background:#10152a;
+    font-size:22px; line-height:1; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .choice-btn.correct{border-color:var(--success); background:var(--success-bg)}
+  .choice-btn.shake,.odd-card.shake{border-color:var(--try-again); background:var(--try-again-bg)}
+  @media (prefers-reduced-motion:no-preference){
+    .choice-btn.shake,.odd-card.shake{animation:shake .4s ease}
+  }
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+
+  .odd-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:4px}
+  .odd-card{
+    background:#10152a; border:2px solid var(--border); border-radius:8px; padding:3px 2px;
+    text-align:center; cursor:pointer;
+  }
+  .odd-card .emoji{font-size:24px; line-height:1.1; display:block}
+  .odd-card .label{font-size:10px; color:var(--ink-soft); display:block; white-space:nowrap; overflow:hidden}
+  .odd-card.correct{border-color:var(--success); background:var(--success-bg)}
+  .odd-card.correct .label{color:var(--teal); font-weight:bold}
+  .odd-card.faded{opacity:.45}
+
+  .next-row{display:flex; justify-content:center; gap:6px; flex:none}
+
+  .celebration{
+    flex:1; text-align:center; background:var(--panel); border:2px solid var(--success);
+    border-radius:10px; padding:20px 8px;
+  }
+  .celebration .big-emoji{font-size:32px}
+  .celebration h2{color:var(--teal); margin:4px 0; font-size:16px}
+  .celebration p{color:var(--ink-soft); margin:0 0 10px; font-size:11px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header><h1>Logic Game</h1></header>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="mode-select">Game</label>
+      <select id="mode-select">
+        <option value="pattern">What comes next?</option>
+        <option value="odd">Odd one out</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="difficulty-select">Level</label>
+      <select id="difficulty-select">
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="sound-toggle">Sound</label>
+      <label class="icon-toggle" for="sound-toggle" title="Sound">
+        <input type="checkbox" id="sound-toggle" aria-label="Sound">
+        <span id="sound-label">🔇</span>
+      </label>
+    </div>
+    <div class="control-group">
+      <button class="btn secondary" id="restart-btn" aria-label="Restart">🔄</button>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span id="progress-text">Problem 1 / 5</span>
+    <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" id="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+
+  <div class="message-banner" id="message-banner" aria-live="polite">Let's think carefully!</div>
+
+  <div id="play-area">
+    <p class="prompt" id="prompt-text">What comes next?</p>
+    <div class="hint-box" id="hint-box"></div>
+
+    <div class="game-panel">
+      <div id="pattern-mode-ui">
+        <div class="sequence-row" id="sequence-row"></div>
+        <div class="choices-row" id="choices-row"></div>
+      </div>
+      <div id="odd-mode-ui" style="display:none;">
+        <div class="odd-grid" id="odd-grid"></div>
+      </div>
+    </div>
+
+    <div class="next-row">
+      <button class="btn ghost" id="hint-btn">💡 Hint</button>
+      <button class="btn" id="next-btn" style="display:none;">Next →</button>
+    </div>
+  </div>
+
+  <div class="celebration" id="celebration" style="display:none;" role="status">
+    <div class="big-emoji" aria-hidden="true">🎉</div>
+    <h2>Great job!</h2>
+    <p>You solved all 5 problems.</p>
+    <button class="btn" id="play-again-btn">Play again</button>
+  </div>
+</div>
+
+<script>
+  // Scale the 320x240 layout up to fill the whole window.
+  // STRETCH = true fills edge to edge (may look slightly stretched on 16:9);
+  // STRETCH = false keeps proportions and centres it (side bars on 16:9).
+  const STRETCH = false;
+  function fitToScreen() {
+    const app = document.querySelector('.app');
+    const sx = window.innerWidth / 320, sy = window.innerHeight / 240;
+    if (STRETCH) {
+      app.style.transform = `scale(${sx}, ${sy})`;
+    } else {
+      const s = Math.min(sx, sy);
+      const x = (window.innerWidth - 320 * s) / 2, y = (window.innerHeight - 240 * s) / 2;
+      app.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+    }
+  }
+  window.addEventListener('resize', fitToScreen);
+  fitToScreen();
+
+  // ---- Bridge to the local Flask server (server.py) ----
+  const BRIDGE_URL = 'http://localhost:5000/update';
+
+  function reportProblemToServer(solvedFlag) {
+    if (!currentRound) return;
+    const payload = {
+      type: currentRound.type,
+      prompt: promptText.textContent,
+      hint: currentRound.hint,
+      answer: currentRound.answer,
+      solved: !!solvedFlag,
+    };
+    fetch(BRIDGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }
+
+  const PATTERN_POOL = ["🔴","🟠","🟡","🟢","🔵","🟣"];
+
+  const CATEGORIES = {
+    animals: { label: "animals", items: [
+      { word: "Dog", emoji: "🐶" }, { word: "Cat", emoji: "🐱" }, { word: "Rabbit", emoji: "🐰" },
+      { word: "Elephant", emoji: "🐘" }, { word: "Lion", emoji: "🦁" }, { word: "Turtle", emoji: "🐢" },
+      { word: "Frog", emoji: "🐸" }, { word: "Bird", emoji: "🐦" },
+    ]},
+    fruits: { label: "fruits", items: [
+      { word: "Apple", emoji: "🍎" }, { word: "Banana", emoji: "🍌" }, { word: "Grapes", emoji: "🍇" },
+      { word: "Strawberry", emoji: "🍓" }, { word: "Orange", emoji: "🍊" }, { word: "Watermelon", emoji: "🍉" },
+      { word: "Pineapple", emoji: "🍍" }, { word: "Kiwi", emoji: "🥝" },
+    ]},
+    vehicles: { label: "vehicles", items: [
+      { word: "Car", emoji: "🚗" }, { word: "Bus", emoji: "🚌" }, { word: "Bicycle", emoji: "🚲" },
+      { word: "Train", emoji: "🚆" }, { word: "Boat", emoji: "⛵" }, { word: "Airplane", emoji: "✈️" },
+      { word: "Truck", emoji: "🚚" }, { word: "Scooter", emoji: "🛴" },
+    ]},
+    weather: { label: "weather", items: [
+      { word: "Sun", emoji: "☀️" }, { word: "Rain", emoji: "🌧️" }, { word: "Cloud", emoji: "☁️" },
+      { word: "Snow", emoji: "❄️" }, { word: "Rainbow", emoji: "🌈" }, { word: "Storm", emoji: "⛈️" },
+    ]},
+  };
+
+  const TOTAL_ROUNDS = 5;
+
+  const $ = (id) => document.getElementById(id);
+  const modeSelect = $('mode-select'), difficultySelect = $('difficulty-select');
+  const soundToggle = $('sound-toggle'), soundLabel = $('sound-label');
+  const restartBtn = $('restart-btn'), playAgainBtn = $('play-again-btn');
+  const progressText = $('progress-text'), progressFill = $('progress-fill'), progressBar = $('progress-bar');
+  const messageBanner = $('message-banner'), promptText = $('prompt-text');
+  const hintBox = $('hint-box'), hintBtn = $('hint-btn'), nextBtn = $('next-btn');
+  const playArea = $('play-area'), celebration = $('celebration');
+  const patternUI = $('pattern-mode-ui'), oddUI = $('odd-mode-ui');
+  const sequenceRow = $('sequence-row'), choicesRow = $('choices-row'), oddGrid = $('odd-grid');
+
+  let currentRoundIndex = 0, currentRound = null, solved = false, audioCtx = null;
+
+  function focusFirstChoice(container) {
+    const el = container.querySelector('button:not([disabled]), [role="button"]:not(.disabled)');
+    if (el) el.focus();
+  }
+
+  function attachRovingNav(container) {
+    container.addEventListener('keydown', (e) => {
+      if (!['ArrowRight','ArrowDown','ArrowLeft','ArrowUp'].includes(e.key)) return;
+      const items = Array.from(container.querySelectorAll('button:not([disabled]), [role="button"]:not(.disabled)'));
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      const fwd = e.key === 'ArrowRight' || e.key === 'ArrowDown';
+      const n = fwd ? (i < 0 ? 0 : (i + 1) % items.length)
+                    : (i < 0 ? items.length - 1 : (i - 1 + items.length) % items.length);
+      e.preventDefault();
+      items[n].focus();
+    });
+  }
+  attachRovingNav(choicesRow);
+  attachRovingNav(oddGrid);
+
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'select') return;
+    if (e.key === 'Escape') { e.preventDefault(); window.location.href = 'index_en.html'; }
+    else if (e.key === 'Delete') { e.preventDefault(); renderRound(); }
+  });
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function playTone(freqs, duration) {
+    if (!soundToggle.checked) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = audioCtx.currentTime;
+      freqs.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.02 + i * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration + i * 0.08);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(now + i * 0.08); osc.stop(now + duration + i * 0.08 + 0.05);
+      });
+    } catch (e) {}
+  }
+  const playSuccessSound = () => playTone([523.25, 659.25, 783.99], 0.25);
+  const playTrySound = () => playTone([349.23], 0.2);
+
+  soundToggle.addEventListener('change', () => {
+    soundLabel.textContent = soundToggle.checked ? '🔊' : '🔇';
+  });
+
+  function buildPatternRound(difficulty) {
+    let unitLength, distinctCount, choiceCount;
+    if (difficulty === 'easy') { unitLength = 2; distinctCount = 2; choiceCount = 3; }
+    else if (difficulty === 'medium') { unitLength = 3; distinctCount = Math.random() < 0.5 ? 2 : 3; choiceCount = 4; }
+    else { unitLength = Math.random() < 0.5 ? 3 : 4; distinctCount = unitLength === 4 ? 4 : (Math.random() < 0.5 ? 2 : 3); choiceCount = 4; }
+
+    const icons = shuffle(PATTERN_POOL).slice(0, distinctCount);
+    const unit = [];
+    for (let i = 0; i < unitLength; i++) unit.push(icons[i % distinctCount]);
+
+    const extra = Math.floor(Math.random() * unitLength);
+    const displayLength = unitLength * 2 + extra;
+    const sequence = [];
+    for (let i = 0; i < displayLength; i++) sequence.push(unit[i % unitLength]);
+    const answer = unit[displayLength % unitLength];
+
+    const distractors = shuffle(PATTERN_POOL.filter(e => e !== answer));
+    const choices = shuffle([answer, ...distractors.slice(0, choiceCount - 1)]);
+
+    return { type: 'pattern', sequence, answer, choices, hint: `This pattern repeats every ${unitLength} pictures.` };
+  }
+
+  function buildOddRound(difficulty) {
+    const totalItems = difficulty === 'easy' ? 4 : (difficulty === 'medium' ? 5 : 6);
+    const keys = Object.keys(CATEGORIES);
+    const mainKey = keys[Math.floor(Math.random() * keys.length)];
+    let oddKey = keys[Math.floor(Math.random() * keys.length)];
+    while (oddKey === mainKey) oddKey = keys[Math.floor(Math.random() * keys.length)];
+
+    const mainItems = shuffle(CATEGORIES[mainKey].items).slice(0, totalItems - 1);
+    const mainEmojis = new Set(mainItems.map(i => i.emoji));
+    const oddItem = shuffle(CATEGORIES[oddKey].items).filter(i => !mainEmojis.has(i.emoji))[0];
+
+    const combined = shuffle([
+      ...mainItems.map(i => ({ ...i, isOdd: false })),
+      { ...oddItem, isOdd: true },
+    ]);
+    return { type: 'odd', items: combined, answer: oddItem.word, hint: `Most of these are ${CATEGORIES[mainKey].label}.` };
+  }
+
+  function generateRound() {
+    const d = difficultySelect.value;
+    return modeSelect.value === 'pattern' ? buildPatternRound(d) : buildOddRound(d);
+  }
+
+  function renderRound() {
+    solved = false;
+    hintBox.classList.remove('visible');
+    hintBox.textContent = '';
+    nextBtn.style.display = 'none';
+    hintBtn.style.display = '';
+    messageBanner.textContent = "Let's think carefully!";
+
+    currentRound = generateRound();
+
+    if (currentRound.type === 'pattern') {
+      patternUI.style.display = 'block';
+      oddUI.style.display = 'none';
+      promptText.textContent = 'What comes next in the pattern?';
+      renderPattern(currentRound);
+    } else {
+      patternUI.style.display = 'none';
+      oddUI.style.display = 'block';
+      promptText.textContent = 'Pick the one that is different.';
+      renderOdd(currentRound);
+    }
+    updateProgress();
+    reportProblemToServer(false);
+  }
+
+  function renderPattern(round) {
+    sequenceRow.innerHTML = '';
+    round.sequence.forEach(icon => {
+      const box = document.createElement('div');
+      box.className = 'seq-box';
+      box.textContent = icon;
+      box.setAttribute('aria-hidden', 'true');
+      sequenceRow.appendChild(box);
+    });
+    const blank = document.createElement('div');
+    blank.className = 'seq-box blank';
+    blank.id = 'blank-box';
+    blank.textContent = '?';
+    sequenceRow.appendChild(blank);
+
+    choicesRow.innerHTML = '';
+    round.choices.forEach(icon => {
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.textContent = icon;
+      btn.setAttribute('aria-label', 'Select this picture');
+      btn.addEventListener('click', () => handlePatternChoice(btn, icon));
+      choicesRow.appendChild(btn);
+    });
+    focusFirstChoice(choicesRow);
+  }
+
+  function handlePatternChoice(btn, icon) {
+    if (solved) return;
+    if (icon === currentRound.answer) {
+      solved = true;
+      const blank = $('blank-box');
+      blank.textContent = icon;
+      blank.classList.remove('blank');
+      blank.classList.add('filled-correct');
+      btn.classList.add('correct');
+      choicesRow.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+      onSolved();
+    } else {
+      btn.classList.add('shake');
+      messageBanner.textContent = 'Try again, you can do it!';
+      playTrySound();
+      setTimeout(() => btn.classList.remove('shake'), 450);
+    }
+  }
+
+  function renderOdd(round) {
+    oddGrid.innerHTML = '';
+    round.items.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'odd-card';
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', item.word);
+      card.innerHTML = `<span class="emoji" aria-hidden="true">${item.emoji}</span><span class="label">${item.word}</span>`;
+      card.addEventListener('click', () => handleOddChoice(card, item));
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOddChoice(card, item); }
+      });
+      oddGrid.appendChild(card);
+    });
+    focusFirstChoice(oddGrid);
+  }
+
+  function handleOddChoice(card, item) {
+    if (solved) return;
+    if (item.isOdd) {
+      solved = true;
+      card.classList.add('correct');
+      oddGrid.querySelectorAll('.odd-card').forEach(c => {
+        if (c !== card) c.classList.add('faded');
+        c.classList.add('disabled');
+      });
+      onSolved();
+    } else {
+      card.classList.add('shake');
+      messageBanner.textContent = 'It belongs to the group. Try again!';
+      playTrySound();
+      setTimeout(() => card.classList.remove('shake'), 450);
+    }
+  }
+
+  function onSolved() {
+    messageBanner.textContent = 'Great job! 🌟';
+    playSuccessSound();
+    hintBtn.style.display = 'none';
+    nextBtn.style.display = 'inline-block';
+    nextBtn.focus();
+    reportProblemToServer(true);
+  }
+
+  function updateProgress() {
+    progressText.textContent = `Problem ${currentRoundIndex + 1} / ${TOTAL_ROUNDS}`;
+    progressFill.style.width = (currentRoundIndex / TOTAL_ROUNDS) * 100 + '%';
+    progressBar.setAttribute('aria-valuenow', currentRoundIndex);
+  }
+
+  function showCelebration() {
+    playArea.style.display = 'none';
+    messageBanner.textContent = '';
+    celebration.style.display = 'block';
+    playAgainBtn.focus();
+  }
+
+  function startSession() {
+    currentRoundIndex = 0;
+    playArea.style.display = 'flex';
+    celebration.style.display = 'none';
+    renderRound();
+  }
+
+  hintBtn.addEventListener('click', () => {
+    hintBox.textContent = '💡 ' + currentRound.hint;
+    hintBox.classList.add('visible');
+  });
+
+  nextBtn.addEventListener('click', () => {
+    currentRoundIndex++;
+    if (currentRoundIndex >= TOTAL_ROUNDS) {
+      progressFill.style.width = '100%';
+      showCelebration();
+    } else {
+      renderRound();
+    }
+  });
+
+  restartBtn.addEventListener('click', startSession);
+  playAgainBtn.addEventListener('click', startSession);
+  modeSelect.addEventListener('change', startSession);
+  difficultySelect.addEventListener('change', startSession);
+
+  startSession();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BEN</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="console">
+    <header class="topbar">
+      <div class="brand">BEN<span>•</span>HOME</div>
+      <div class="status">
+        <span id="time">12:00</span>
+        <span>🔋</span>
+        <span>Wi-Fi</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-art" id="heroArt">
+          <div class="shine"></div>
+          <div class="hero-icon" id="heroIcon">🎮</div>
+          <div class="hero-title" id="heroTitle">RACING X</div>
+        </div>
+
+        <div class="details">
+          <div class="eyebrow">SELECTED GAME</div>
+          <h1 id="detailsTitle">RACING X</h1>
+          <p id="detailsDescription">High-speed arcade racing with local multiplayer support.</p>
+          <div class="meta">
+            <span>GAME</span>
+            <span id="detailsSize">1.2 GB</span>
+            <span id="detailsPlayers">1–4 PLAYERS</span>
+          </div>
+          <button id="launch">▶ START GAME</button>
+        </div>
+      </section>
+
+      <section class="carousel-wrap">
+        <button class="nav prev" id="prev">‹</button>
+        <div class="carousel" id="carousel"></div>
+        <button class="nav next" id="next">›</button>
+      </section>
+
+      <div class="dots" id="dots"></div>
+    </main>
+
+    <footer>
+      <div>▲▼ Navigate</div>
+      <div>◯ Select</div>
+      <div>✕ Back</div>
+      <div>SELECT: Menu</div>
+    </footer>
+  </div>
+
+  <script src="app_en.js"></script>
+</body>
+</html>
