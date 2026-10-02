@@ -1,0 +1,153 @@
+#include "USB.h"
+#include "USBHIDMouse.h"
+#include "USBHIDKeyboard.h"
+
+USBHIDMouse Mouse;
+USBHIDKeyboard Keyboard;
+
+const int VRX_PIN = 1;
+const int VRY_PIN = 2;
+const int SW_PIN  = 3;
+
+const int BTN_PINS[4] = {4, 5, 6, 7}; // Enter, Esc, Delete, Space
+
+const int DEADZONE = 400;
+
+bool btnWasPressed[4] = {false, false, false, false};
+bool swWasPressed = false;
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  pinMode(SW_PIN, INPUT_PULLUP);
+
+  for (int i = 0; i < 4; i++) {
+    pinMode(BTN_PINS[i], INPUT_PULLUP);
+  }
+
+  Mouse.begin();
+  Keyboard.begin();
+  USB.begin();
+
+  Serial.println("USB Keyboard + Mouse ready.");
+}
+
+void loop() {
+
+  // =========================
+  // JOYSTICK
+  // =========================
+
+  int rawX = analogRead(VRX_PIN);
+  int rawY = analogRead(VRY_PIN);
+
+  int dx = rawX - 2048;
+  int dy = rawY - 2048;
+
+  // LEFT / RIGHT
+  if (dx > DEADZONE) {
+    Keyboard.press(KEY_RIGHT_ARROW);
+  } 
+  else {
+    Keyboard.release(KEY_RIGHT_ARROW);
+  }
+
+  if (dx < -DEADZONE) {
+    Keyboard.press(KEY_LEFT_ARROW);
+  } 
+  else {
+    Keyboard.release(KEY_LEFT_ARROW);
+  }
+
+  // UP / DOWN
+  if (dy > DEADZONE) {
+    Keyboard.press(KEY_DOWN_ARROW);
+  } 
+  else {
+    Keyboard.release(KEY_DOWN_ARROW);
+  }
+
+  if (dy < -DEADZONE) {
+    Keyboard.press(KEY_UP_ARROW);
+  } 
+  else {
+    Keyboard.release(KEY_UP_ARROW);
+  }
+
+
+  // =========================
+  // JOYSTICK BUTTON
+  // RIGHT MOUSE CLICK
+  // =========================
+
+  bool swPressed = !digitalRead(SW_PIN);
+
+  if (swPressed && !swWasPressed) {
+    Mouse.press(MOUSE_RIGHT);
+  }
+
+  if (!swPressed && swWasPressed) {
+    Mouse.release(MOUSE_RIGHT);
+  }
+
+  swWasPressed = swPressed;
+
+
+  // =========================
+  // 4 BUTTONS
+  // =========================
+
+  bool btn[4];
+
+  for (int i = 0; i < 4; i++) {
+    btn[i] = !digitalRead(BTN_PINS[i]);
+  }
+
+
+  // Button 1 = ENTER
+  if (btn[0] && !btnWasPressed[0]) {
+    Keyboard.press(KEY_RETURN);
+  }
+
+  if (!btn[0] && btnWasPressed[0]) {
+    Keyboard.release(KEY_RETURN);
+  }
+
+
+  // Button 2 = ESC
+  if (btn[1] && !btnWasPressed[1]) {
+    Keyboard.press(KEY_ESC);
+  }
+
+  if (!btn[1] && btnWasPressed[1]) {
+    Keyboard.release(KEY_ESC);
+  }
+
+
+  // Button 3 = DELETE
+  if (btn[2] && !btnWasPressed[2]) {
+    Keyboard.press(KEY_DELETE);
+  }
+
+  if (!btn[2] && btnWasPressed[2]) {
+    Keyboard.release(KEY_DELETE);
+  }
+
+
+  // Button 4 = SPACE
+  if (btn[3] && !btnWasPressed[3]) {
+    Keyboard.press(' ');
+  }
+
+  if (!btn[3] && btnWasPressed[3]) {
+    Keyboard.release(' ');
+  }
+
+
+  for (int i = 0; i < 4; i++) {
+    btnWasPressed[i] = btn[i];
+  }
+
+  delay(10);
+}
