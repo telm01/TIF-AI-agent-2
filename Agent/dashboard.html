@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent memory</title>
+<style>
+  :root {
+    --paper: #f6f8f7; --panel: #ffffff; --ink: #14323a; --muted: #5d7279;
+    --line: #d7e0e2; --good: #1f7a6d; --warn: #c27a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0f1d21; --panel: #162a30; --ink: #e6efef; --muted: #95aab0;
+      --line: #2a4249; --good: #4fc3b0; --warn: #f0b429;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  h2 { font-size: 1.05rem; margin: 32px 0 10px; }
+  .preview {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 4px solid var(--good); border-radius: 6px;
+    padding: 14px 16px; font-size: 1.05rem;
+  }
+  .preview small { display: block; color: var(--muted); margin-bottom: 4px; }
+  dl { margin: 0; background: var(--panel); border: 1px solid var(--line);
+       border-radius: 6px; }
+  .fact { display: flex; gap: 16px; padding: 10px 16px;
+          border-bottom: 1px solid var(--line); }
+  .fact:last-child { border-bottom: 0; }
+  dt { width: 120px; color: var(--muted); flex: none; }
+  dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .bar-row { display: grid; grid-template-columns: 90px 1fr 70px;
+             gap: 12px; align-items: center; padding: 6px 0; }
+  .track { height: 14px; background: var(--line); border-radius: 7px;
+           overflow: hidden; display: block; }
+  .fill { display: block; height: 100%; background: var(--good); }
+  .fill.low { background: var(--warn); }
+  .bar-count { color: var(--muted); text-align: right;
+               font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; background: var(--panel);
+       border: 1px solid var(--line); border-radius: 6px; }
+  li { display: grid; grid-template-columns: 130px 1fr auto; gap: 12px;
+       padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  li time { color: var(--muted); }
+  li.ok b { color: var(--good); }
+  li.miss b { color: var(--warn); }
+  .empty { color: var(--muted); background: var(--panel);
+           border: 1px dashed var(--line); border-radius: 6px;
+           padding: 14px 16px; margin: 0; }
+  code { background: var(--line); padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 480px) {
+    .bar-row { grid-template-columns: 70px 1fr 60px; }
+    li { grid-template-columns: 1fr auto; }
+    li time { grid-column: 1 / -1; }
+  }
+</style>
+<!-- Written by memory.py every time the agent saves something -->
+<script src="memory_data.js"></script>
+</head>
+<body>
+<main>
+  <h1>Agent memory</h1>
+  <p class="sub" id="updated">Waiting for data.</p>
+
+  <h2>What the model is told</h2>
+  <div class="preview" id="preview"></div>
+
+  <h2>Saved facts</h2>
+  <div id="facts"></div>
+
+  <h2>Progress by round</h2>
+  <div id="progress"></div>
+
+  <h2>Recent rounds</h2>
+  <div id="recent"></div>
+</main>
+
+<script>
+  const REFRESH_SECONDS = 5;
+  const data = window.MEMORY || { facts: [], progress: [], recent: [], weak: [] };
+
+  // Build elements with textContent so saved text can never inject HTML.
+  function el(tag, props, children) {
+    const node = document.createElement(tag);
+    Object.assign(node, props || {});
+    (children || []).forEach(c => node.append(c));
+    return node;
+  }
+  function empty(box, ...parts) {
+    box.append(el("p", { className: "empty" }, parts));
+  }
+  const $ = id => document.getElementById(id);
+
+  // Header
+  $("updated").textContent = window.MEMORY
+    ? "Last saved " + new Date(data.updated * 1000).toLocaleTimeString() +
+      ". Refreshes every " + REFRESH_SECONDS + " seconds."
+    : "No data file found. Run the agent once so memory.py creates memory_data.js.";
+
+  // What the model is told
+  const factsText = data.facts.map(([k, v]) => k + ": " + v).join("; ") || "none yet";
+  const weakText = data.weak.join(", ") || "nothing yet";
+  $("preview").append(
+    el("small", { textContent: "Added to the system prompt each turn" }),
+    "Known facts: " + factsText + ". Needs practice: " + weakText + "."
+  );
+
+  // Facts
+  if (data.facts.length) {
+    const dl = el("dl");
+    data.facts.forEach(([k, v]) =>
+      dl.append(el("div", { className: "fact" }, [
+        el("dt", { textContent: k }),
+        el("dd", { textContent: v }),
+      ])));
+    $("facts").append(dl);
+  } else {
+    empty($("facts"), "No facts saved yet. Call ",
+      el("code", { textContent: 'mem.remember("name", "Sam")' }), ".");
+  }
+
+  // Progress
+  if (data.progress.length) {
+    data.progress.forEach(([type, correct, total]) => {
+      const pct = Math.round(100 * correct / total);
+      const low = data.weak.includes(type);
+      $("progress").append(el("div", { className: "bar-row" }, [
+        el("span", { textContent: type }),
+        el("span", { className: "track" }, [
+          el("span", { className: "fill" + (low ? " low" : "") }),
+        ]),
+        el("span", { className: "bar-count", textContent: correct + " of " + total }),
+      ]));
+      $("progress").lastChild.querySelector(".fill").style.width = pct + "%";
+    });
+  } else {
+    empty($("progress"), "No rounds logged yet. Call ",
+      el("code", { textContent: 'mem.log_result("add", True)' }),
+      " after each round.");
+  }
+
+  // Recent rounds
+  if (data.recent.length) {
+    const ul = el("ul");
+    data.recent.forEach(([ts, type, correct]) => {
+      const when = new Date(ts * 1000).toLocaleString([], {
+        day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+      });
+      ul.append(el("li", { className: correct ? "ok" : "miss" }, [
+        el("time", { textContent: when }),
+        el("span", { textContent: type }),
+        el("b", { textContent: correct ? "Correct" : "Missed" }),
+      ]));
+    });
+    $("recent").append(ul);
+  } else {
+    empty($("recent"), "Nothing yet.");
+  }
+
+  // Reload to pick up a freshly written memory_data.js
+  setTimeout(() => location.reload(), REFRESH_SECONDS * 1000);
+</script>
+</body>
+</html>
