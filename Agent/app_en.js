@@ -1,5 +1,5 @@
 const games = [
-
+ 
   {
     name: "Language",
     icon: "📚",
@@ -7,7 +7,7 @@ const games = [
     size: "12 MB",
     players: "1 PLAYER",
     c1: "#1477a0", c2: "#40319b",
-    link: "language_game.html"
+    link: "language_game_320x240.html"
   },
   {
     name: "Math",
@@ -16,7 +16,7 @@ const games = [
     size: "10 MB",
     players: "1 PLAYER",
     c1: "#9b3b7c", c2: "#192d75",
-    link: "game.html"
+    link: "number_game_320x240.html"
   },
   {
     name: "Logic",
@@ -25,7 +25,7 @@ const games = [
     size: "8 MB",
     players: "1 PLAYER",
     c1: "#c06a2b", c2: "#4c267e",
-    link: "logic_game.html"
+    link: "logic_game_320x240.html"
   },
   {
     name: "AI Assistant",
@@ -59,17 +59,26 @@ const games = [
     size: "2 MB",
     players: "MENU",
     c1: "#43592a", c2: "#24182e"
+  },
+{
+    name: "Dashboard",
+    icon: "⚙️",
+    description: "Summary of your activities and progress.",
+    size: "2 MB",
+    players: "MENU",
+    c1: "#32383d", c2: "#24182e",
+    link: "dashboard.html"
   }
 ];
-
-
+ 
+ 
 let selected = 0;
-
+ 
 const $ = id => document.getElementById(id);
-
+ 
 function render() {
   const game = games[selected];
-
+ 
   $("heroIcon").textContent = game.icon;
   $("heroTitle").textContent = game.name;
   $("detailsTitle").textContent = game.name;
@@ -79,7 +88,7 @@ function render() {
   $("heroArt").style.background =
     `radial-gradient(circle at 70% 30%, rgba(255,255,255,.35), transparent 8%),
      linear-gradient(135deg, ${game.c1}, ${game.c2})`;
-
+ 
   $("carousel").innerHTML = games.map((g, i) => `
     <div class="card ${i === selected ? "selected" : ""}"
          style="--c1:${g.c1};--c2:${g.c2}"
@@ -88,11 +97,11 @@ function render() {
       <div class="name">${g.name}</div>
     </div>
   `).join("");
-
+ 
   $("dots").innerHTML = games.map((_, i) =>
     `<div class="dot ${i === selected ? "active" : ""}"></div>`
   ).join("");
-
+ 
   document.querySelectorAll(".card").forEach(card => {
     card.onclick = () => {
       selected = Number(card.dataset.index);
@@ -100,37 +109,44 @@ function render() {
     };
   });
 }
-
+ 
 function move(direction) {
   selected = (selected + direction + games.length) % games.length;
   render();
 }
-
+ 
 $("prev").onclick = () => move(-1);
 $("next").onclick = () => move(1);
-
+ 
 $("launch").onclick = () => {
   const selectedGame = games[selected];
-
+ 
   if (selectedGame && selectedGame.link) {
     window.location.href = selectedGame.link;
   }
 };
-
+ 
 document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") move(-1);
   if (e.key === "ArrowRight") move(1);
   if (e.key === "Enter" || e.key === " ") $("launch").click();
   if (e.key === "Escape") selected = 0;
 });
-
+ 
 function updateClock() {
   $("time").textContent = new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit"
   });
 }
-
+ 
+// Tell the server the menu is open, so the voice agent stops helping.
+// "pageshow" also fires when the browser's back button returns to this page.
+window.addEventListener("pageshow", () => {
+  fetch("http://127.0.0.1:5000/menu", { method: "POST" }).catch(() => {});
+});
+ 
 render();
 updateClock();
 setInterval(updateClock, 1000);
+ 
