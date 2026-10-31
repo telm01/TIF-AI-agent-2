@@ -35,10 +35,20 @@ SYN = SynthesisConfig(length_scale=1.1)   # >1 = slower, calmer speech
 WHISPER_MODEL = "base.en"            # "tiny.en" is faster
 WHISPER_COMPUTE_TYPE = "int8"
 
-# Optional: pin devices if the default ones fail. Use a "plughw:" device on ALSA,
-# e.g. "plughw:1,0", so ALSA converts sample rate and format for you.
+# ---- Audio devices ----
+# Leave these as None to pick automatically:
+#   input  -> first device whose name contains INPUT_HINT, else the system default, else any input
+#   output -> first device whose name contains OUTPUT_HINT, else the system default, else any output
+# To force a device, set a number from sd.query_devices() (or a name string).
 INPUT_DEVICE = None
 OUTPUT_DEVICE = None
+INPUT_HINT = "USB"                   # your USB microphone
+OUTPUT_HINT = "MAX98357"             # your I2S amplifier
+VOLUME = 0.6                         # 0.0 - 1.0, lower it if the amp sounds harsh or loud
+
+# Chosen at start-up by pick_devices()
+IN_DEV = None
+OUT_DEV = None
 
 # ---- Listening (shorter than before) ----
 SAMPLE_RATE = 16000
@@ -127,6 +137,40 @@ voice = PiperVoice.load(PIPER_MODEL)
 http = requests.Session()     # reuses the connection: less delay on every poll
 
 
+# ---------------- device selection ----------------
+def find_device(hint, kind, preset):
+    """Returns a device index (or the preset). Tries the name hint, then the default, then any device."""
+    if preset is not None:
+        return preset
+    key = "max_input_channels" if kind == "input" else "max_output_channels"
+    devs = sd.query_devices()
+    if hint:
+        for i, d in enumerate(devs):
+            if d[key] > 0 and hint.lower() in d["name"].lower():
+                return i
+    try:
+        i = sd.default.device[0 if kind == "input" else 1]
+        if i is not None and i >= 0 and devs[i][key] > 0:
+            return i
+    except Exception:
+        pass
+    for i, d in enumerate(devs):
+        if d[key] > 0:
+            return i
+    return None
+
+
+def pick_devices():
+    global IN_DEV, OUT_DEV
+    IN_DEV = find_device(INPUT_HINT, "input", INPUT_DEVICE)
+    OUT_DEV = find_device(OUTPUT_HINT, "output", OUTPUT_DEVICE)
+    for label, dev in (("input", IN_DEV), ("output", OUT_DEV)):
+        if dev is None:
+            print(f"[agent] WARNING: no {label} device found. Check 'arecord -l' and 'aplay -l'.")
+        else:
+            print(f"[agent] {label} device: {dev} = {sd.query_devices(dev)['name']}")
+
+
 # ---------------- menu watcher ----------------
 # Set while the display is on index.html (the game menu). The server clears the
 # current problem when the menu opens, so "no problem" means "stay quiet".
@@ -196,23 +240,69 @@ def warm_cache():
             print(f"[agent] cache error for '{t}': {e}")
 
 
+# The output format that works is found once, then reused.
+# Hardware devices (hw:) often accept only stereo, 32-bit, 44100/48000 Hz,
+# so we try combinations until the device says yes.
+_out_cfg = {}            # source rate -> (rate, channels, dtype)
+_out_failed = False
+
+
+def pick_output_format(src_rate):
+    try:
+        info = sd.query_devices(OUT_DEV, kind="output")
+    except Exception as e:
+        print(f"[agent] cannot read output device: {e}")
+        return None
+    max_ch = int(info["max_output_channels"])
+    rates = [src_rate, int(info["default_samplerate"]), 48000, 44100, 32000, 22050, 16000]
+    for rate in dict.fromkeys(rates):
+        for ch in (2, 1):
+            if ch > max_ch:
+                continue
+            for dt in ("int32", "int16", "float32"):
+                try:
+                    sd.check_output_settings(device=OUT_DEV, samplerate=rate, channels=ch, dtype=dt)
+                    print(f"[agent] speaker format: {rate} Hz, {ch} ch, {dt}")
+                    return rate, ch, dt
+                except Exception:
+                    continue
+    return None
+
+
+def convert_for_output(audio_int16, src_rate, cfg):
+    rate, ch, dt = cfg
+    x = audio_int16.astype(np.float32) / 32768.0
+    x = resample(x, src_rate, rate)
+    x = np.clip(x * VOLUME, -1.0, 0.999)
+    if ch == 2:
+        x = np.column_stack([x, x])
+    if dt == "int32":
+        return (x.astype(np.float64) * 2147483647).astype(np.int32), rate
+    if dt == "int16":
+        return (x * 32767).astype(np.int16), rate
+    return x.astype(np.float32), rate
+
+
 def play(audio, rate):
-    try:
-        sd.play(audio, rate, device=OUTPUT_DEVICE)
-        sd.wait()
+    global _out_failed
+    if _out_failed or OUT_DEV is None:
         return
-    except sd.PortAudioError as e:
-        print(f"[agent] play failed at {rate} Hz ({e}); trying device format")
+    cfg = _out_cfg.get(rate)
+    if cfg is None:
+        cfg = pick_output_format(rate)
+        if cfg is None:
+            _out_failed = True
+            print("[agent] audio output error: the speaker accepts none of the formats tried. "
+                  "Run: aplay -l   and   aplay --dump-hw-params -D hw:<card>,0 /dev/zero")
+            return
+        _out_cfg[rate] = cfg
     try:
-        info = sd.query_devices(OUTPUT_DEVICE, kind="output")
-        dev_rate = int(info["default_samplerate"])
-        a = resample(audio.astype(np.float32) / 32768.0, rate, dev_rate)
-        if info["max_output_channels"] >= 2:
-            a = np.column_stack([a, a])
-        sd.play(a, dev_rate, device=OUTPUT_DEVICE)
+        data, out_rate = convert_for_output(audio, rate, cfg)
+        sd.play(data, out_rate, device=OUT_DEV)
         sd.wait()
     except Exception as e:
         print(f"[agent] audio output error: {e}")
+        _out_cfg.pop(rate, None)       # try to find a format again next time
 
 
 def speak_stream(sentences):
@@ -268,16 +358,20 @@ class Mic:
     def open(self):
         if self.stream:
             return
+        if IN_DEV is None:
+            raise RuntimeError("No microphone found. Check that the USB mic shows up in 'arecord -l' "
+                               "and 'lsusb', then start the agent again.")
         rates = [SAMPLE_RATE]
         try:
-            rates.append(int(sd.query_devices(INPUT_DEVICE, kind="input")["default_samplerate"]))
+            rates.append(int(sd.query_devices(IN_DEV, kind="input")["default_samplerate"]))
         except Exception:
             pass
+        rates += [48000, 44100]
         last = None
         for rate in dict.fromkeys(rates):       # try 16 kHz first, then the device's own rate
             try:
                 s = sd.InputStream(samplerate=rate, channels=1, dtype="float32",
-                                   blocksize=int(rate * BLOCK_SEC), device=INPUT_DEVICE)
+                                   blocksize=int(rate * BLOCK_SEC), device=IN_DEV)
                 s.start()
                 self.stream, self.rate = s, rate
                 print(f"[agent] mic open at {rate} Hz")
@@ -668,6 +762,7 @@ def choose_and_send(mem, problem, wrong):
 
 def main():
     mem = Memory()
+    pick_devices()
     mic.open()
     warm_cache()
     if check_ollama():
