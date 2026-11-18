@@ -1,9 +1,6 @@
 # BEN — A Local AI Assistant for an Elementary Student, on a Raspberry Pi 4
 
-> **Hackathon Track 03 — Hardware schematic / advanced software stack**
-> **BEN** is a self-contained, voice-driven learning assistant for an elementary-school autistic student. It runs locally on a Raspberry Pi 4 (no cloud needed). It listens through a hand-built microphone amplifier, talks back through an I2S Class-D amplifier, shows live status on a 2.8" SPI TFT display, takes manual input from a custom ESP32-S3 joystick-and-button controller, and polls a server for problems to act on.
 
-<!-- Replace every <TODO> below before submitting. -->
 
 ---
 
