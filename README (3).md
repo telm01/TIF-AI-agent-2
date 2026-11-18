@@ -1,9 +1,9 @@
-# <PROJECT NAME> — Pocket Voice Agent on a Raspberry Pi Zero W
+# BEN — A Local AI Assistant for an Elementary Student, on a Raspberry Pi 4
 
 > **Hackathon Track 03 — Hardware schematic / advanced software stack**
-> A self-contained, voice-driven agent that listens through a hand-built microphone amplifier, talks back through an I2S Class-D amplifier, shows live status on a small SPI LCD, takes manual input from a custom ESP32-S3 joystick-and-button controller, and polls a server for problems to act on.
+> **BEN** is a self-contained, voice-driven learning assistant for an elementary-school autistic student. It runs locally on a Raspberry Pi 4 (no cloud needed). It listens through a hand-built microphone amplifier, talks back through an I2S Class-D amplifier, shows live status on a 2.8" SPI TFT display, takes manual input from a custom ESP32-S3 joystick-and-button controller, and polls a server for problems to act on.
 
-<!-- Replace <PROJECT NAME>, the one-line pitch above, and every <TODO> below before submitting. -->
+<!-- Replace every <TODO> below before submitting. -->
 
 ---
 
@@ -34,20 +34,20 @@ End-to-end flow:
  SERVER_URL ◄── polls for problems ──────────────────────►  voiceagent.py
                                                                   │
         ESP32-S3 controller ──────────────────────────────────────┤
-        (USB HID: joystick + Enter/Esc/Delete/Space)                      │
+        (USB HID: joystick + Enter/Esc/Delete/Space)              │
                          ┌────────────────────────────────────────┤
                          ▼                                        ▼
-                ST7735 LCD (status / mirror)        MAX98357A ──► Speaker
+         2.8" ILI9341 TFT (status / mirror)            MAX98357A ──► Speaker
 ```
 
 1. The microphone signal is boosted by a **custom-built amplifier circuit**.
 2. `voiceagent.py` captures audio with PortAudio/ALSA and runs **speech-to-text**.
 3. The agent **polls a server** (`SERVER_URL`) for problems/tasks and combines them with what the user says.
 4. Responses are spoken through a **MAX98357A I2S Class-D amplifier** and a speaker.
-5. A **128x160 ST7735 SPI LCD** mirrors the main display so the device is usable standalone.
+5. A **2.8" 240x320 ILI9341 SPI TFT** (TPM408-2.8) mirrors the main display so the device is usable standalone.
 6. A **custom ESP32-S3 controller** (joystick + 4 push buttons: Enter, Esc, Delete, Space) enumerates as a standard **USB keyboard + mouse**, so the Pi needs no drivers: navigate, confirm, correct mistakes, and quit without a physical keyboard.
 
-<TODO: 2–3 sentences on the concrete use case, e.g. who it's for and what "problems" the server reports.>
+**Who it's for:** BEN is designed for an elementary-school student with autism. It uses short sentences, simple words and a short listening window so conversation stays calm and predictable. The "problems" the server reports are learning-game rounds (counting, adding, patterns, odd-one-out, picture and letter rounds). The difficulty level and game mode adapt to how the child is doing. Everything (speech recognition, language model, text-to-speech) runs on the device, so the child's voice never leaves it.
 
 ---
 
@@ -56,12 +56,12 @@ End-to-end flow:
 | Layer | Component | Role |
 |---|---|---|
 | Input | Electret/analog mic + **DIY mic amp** | Conditions and amplifies the mic signal |
-| Compute | Raspberry Pi Zero W | Runs the agent, drives display and audio |
-| Software | `voiceagent.py` (Python 3.13) | STT, server polling, response logic, TTS/audio out |
+| Compute | **Raspberry Pi 4** | Runs the local AI stack, drives display and audio |
+| Software | `voiceagent.py` (Python 3.13) | Local STT (faster-whisper), local LLM (Ollama, qwen2.5:3b), TTS (Piper), server polling, response logic |
 | Audio out | **MAX98357A** I2S Class-D mono amp | Digital I2S in → speaker out, no DAC needed |
-| Display | ST7735 128x160 SPI LCD | Status UI / mirrored display |
+| Display | 2.8" TFT, ILI9341, 240x320, SPI (TPM408-2.8) | Status UI / mirrored display |
 | Input | Custom controller on **ESP32-S3** | Reads joystick + 4 buttons, presents as USB HID keyboard + mouse |
-| Backend | HTTP server at `SERVER_URL` | Source of problems/tasks for the agent |
+| Backend | Local Flask server (`server.py`) at `SERVER_URL` | Serves the game pages and the current problem/task to the agent |
 
 ---
 
@@ -71,10 +71,10 @@ End-to-end flow:
 
 | # | Part | Notes |
 |---|---|---|
-| 1 | Raspberry Pi Zero W | Main controller |
+| 1 | Raspberry Pi 4 | Main computer; 5 V / 3 A USB-C supply recommended |
 | 2 | MAX98357A I2S Class-D mono amplifier module | Speaker driver |
 | 3 | Speaker (4–8 Ω, 3 W max) | <TODO: exact speaker> |
-| 4 | ST7735 128x160 SPI LCD | Wired directly to GPIO (no HAT) |
+| 4 | 2.8" TFT display, TPM408-2.8 (ILI9341, 240x320, SPI) | Wired directly to GPIO (no HAT); 3.3–5 V input; 4-wire resistive touch (unused) |
 | 5 | Microphone (<TODO: electret / analog MEMS>) | Feeds the DIY amplifier |
 | 6 | Custom mic amplifier | <TODO: op-amp / transistor part numbers, see below> |
 | 7 | Audio capture path | <TODO: USB sound card / ADC board that digitises the amplified mic signal> |
@@ -87,17 +87,19 @@ End-to-end flow:
 
 ## Wiring
 
-### ST7735 LCD → Raspberry Pi (SPI0)
+### 2.8" TFT (ILI9341) → Raspberry Pi (SPI0)
 
-| LCD pin | Pi GPIO | Function |
+| TFT pin | Pi GPIO | Function |
 |---|---|---|
 | LED | GPIO22 | Backlight |
 | SCK | GPIO11 (SCLK) | SPI clock |
-| SDA | GPIO10 (MOSI) | SPI data |
-| A0 (DC) | GPIO24 | Data/command |
+| SDI (MOSI) | GPIO10 (MOSI) | SPI data in |
+| DC (A0) | GPIO24 | Data/command |
 | RESET | GPIO25 | Reset |
 | CS | GPIO8 (CE0) | Chip select |
 | VCC / GND | 3.3 V / GND | Power |
+
+The touch pins (T_CLK, T_CS, T_DIN, T_DO, T_IRQ) are left unconnected, since the touch layer is not used; input comes from the ESP32-S3 controller.
 
 ### MAX98357A → Raspberry Pi (I2S)
 
@@ -133,13 +135,14 @@ The display (SPI0: GPIO 8/10/11) and I2S (GPIO 18/19/21) use different pins, so 
 
 ## Custom microphone amplifier
 
-The Pi has no analog input, and a bare microphone signal is far too weak for reliable speech recognition. We designed and built our own amplifier stage.
+The Pi 4 has no analog input, and a bare microphone signal is far too weak for reliable speech recognition. We designed and built our own amplifier stage.
 
-- **Topology:** <TODO: e.g. single-supply op-amp non-inverting stage / transistor preamp>
-- **Gain:** <TODO: e.g. ~40 dB>
-- **Supply:** <TODO>
-- **Bias:** <TODO: electret bias resistor, DC-blocking caps, mid-rail bias>
-- **Output:** <TODO: how it connects to the capture device>
+- **Topology:** Single-transistor common-emitter preamp (BC547) with an electret condenser microphone.
+- **Supply:** 3.3 V battery.
+- **Bias:** 10 kΩ resistor biases the electret capsule; a 100 kΩ resistor from the collector to the base sets the transistor's operating point (collector-feedback bias).
+- **Coupling:** 100 nF capacitor AC-couples the microphone to the base; a 100 nF capacitor on the output blocks DC before the audio jack.
+- **Gain:** <TODO: measured gain>
+- **Output:** 3.5 mm audio jack (J2) → <TODO: how it connects to the capture device>
 
 Schematic: `docs/mic-amp-schematic.png` <TODO: add file>
 
@@ -161,7 +164,7 @@ A handmade controller built from an analog joystick, four push buttons, and an E
 | Button 3 | **Delete** |
 | Button 4 | **Space** |
 
-- **Link to the Pi:** USB HID (plug the board's native USB port into the Pi).
+- **Link to the Pi:** USB HID (plug the board's native USB port into one of the Pi 4's USB ports).
 - **Firmware:** `firmware/controller/controller.ino` (Arduino, ESP32 core, `USB.h`, `USBHIDKeyboard`, `USBHIDMouse`).
 - **Joystick handling:** 12-bit ADC, centre 2048, dead zone of ±400 counts. Each axis maps to a key that is pressed and released as the stick crosses the threshold, so holding the stick gives normal key repeat.
 - **Button handling:** `INPUT_PULLUP` (active low) with edge detection, so each press/release sends exactly one key-down and one key-up. The 10 ms loop delay gives basic debouncing.
@@ -193,7 +196,7 @@ const int DEADZONE = 400;
 ```bash
 sudo apt update
 sudo apt install -y python3-pip python3-venv portaudio19-dev libasound2-dev \
-                    alsa-utils python3-spidev python3-rpi.gpio
+                    alsa-utils python3-spidev python3-rpi.gpio libjpeg-dev
 ```
 
 ### 2. Enable interfaces
@@ -225,24 +228,38 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` should include at least: `pyaudio` (or `sounddevice`), `requests`, `st7735`, `pillow`, plus your STT/TTS libraries. <TODO: pin versions>
+`requirements.txt` should include at least: `sounddevice` (or `pyaudio`), `requests`, `flask`, `luma.lcd`, `pillow`, `faster-whisper`, and `piper-tts`. Install [Ollama](https://ollama.com) separately and pull the model: `ollama pull qwen2.5:3b`. <TODO: pin versions>
 
-### 4. Display library patch
+### 4. Display driver
 
-The panel we used is effectively **124x160**, not 128x160. With the stock Pimoroni `st7735` package the image is offset or clipped, so the library's resolution constants must be changed:
+The 2.8" TFT is an **ILI9341 at 240x320**, so the stock driver works as-is, with no library patching needed. With `luma.lcd`:
 
 ```python
-# in the installed st7735 package (st7735/__init__.py)
-ST7735_TFTWIDTH  = 124   # was 128
-ST7735_TFTHEIGHT = 160
+from luma.core.interface.serial import spi
+from luma.lcd.device import ili9341
+from luma.core.render import canvas
+import RPi.GPIO as GPIO
+
+serial = spi(port=0, device=0,           # CE0 (GPIO8)
+             gpio_DC=24, gpio_RST=25,
+             bus_speed_hz=32000000)
+device = ili9341(serial, width=240, height=320, rotate=0)
+
+# Backlight on GPIO22
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(22, GPIO.OUT)
+GPIO.output(22, GPIO.HIGH)
+
+with canvas(device) as draw:
+    draw.text((10, 10), "Hello", fill="white")
 ```
 
-Verify with the Pimoroni example (`image.py`) before running the agent. <TODO: if you ship a patched copy/fork, point to it here.>
+Set `rotate=1` (or `3`) for landscape orientation (320x240). Verify with a test image before running the agent. <TODO: confirm your final driver/library choice.>
 
 ### 5. Configuration
 
 ```bash
-export SERVER_URL="http://<your-server>:<port>"
+export SERVER_URL="http://127.0.0.1:5000"   # local Flask server.py
 ```
 
 <TODO: list any other env vars / config keys, e.g. API keys, language, wake word, input device index.>
@@ -261,8 +278,8 @@ Expected behaviour:
 
 1. Display shows a boot/status screen.
 2. Agent starts listening on the microphone.
-3. Speak a command — transcript appears on the LCD.
-4. Agent polls `SERVER_URL`, reasons about any problems, and replies through the speaker.
+3. Speak a command — transcript appears on the TFT.
+4. Agent polls `SERVER_URL`, reasons about the current problem with the local model, and replies in short, simple sentences through the speaker.
 
 <TODO: add a short demo GIF/video link and a sample session transcript.>
 
@@ -275,10 +292,10 @@ This is the part that goes beyond a "works on my desk" demo:
 | Problem | Symptom | Fix |
 |---|---|---|
 | **PortAudio error -9997 "Invalid sample rate"** | STT input stream failed to open on ALSA | Query the device's supported rates (`python -m sounddevice` / `arecord --dump-hw-params`) and open the stream at a native rate (e.g. 44100/48000 Hz), then resample to the rate the STT engine needs. <TODO: confirm your final fix> |
-| **LCD panel size mismatch** | Image shifted/clipped on the ST7735 | Patched library resolution constants to 124x160 |
+| **Blank white TFT** | Panel stayed white with no image | <TODO: confirm the fix, e.g. correct driver (`ili9341`), SPI enabled, DC/RESET/CS pins, backlight on GPIO22> |
 | **No analog input on the Pi** | Mic signal unusable | Designed and built a custom mic amplifier |
 | **No keyboard on a headless device** | Couldn't correct STT output or confirm actions | Built an ESP32-S3 joystick + Enter/Esc/Delete/Space controller that appears as a USB HID keyboard + mouse, so it works with zero Pi-side code |
-| **No built-in amp on Pi Zero** | No loud, clean audio out | MAX98357A over I2S (digital path, no analog noise) |
+| **No clean, loud speaker output** | The Pi's analog jack is weak and noisy | MAX98357A over I2S (digital path, no analog noise) |
 | **Custom GPIO wiring instead of a HAT** | Pin conflicts, CS/DC/RESET assignment | Documented pin map above; SPI0 and I2S kept on separate pins |
 | <TODO: network drops / server down> | | <TODO: retry/backoff behaviour> |
 
@@ -307,7 +324,8 @@ This is the part that goes beyond a "works on my desk" demo:
 
 - Swap the STT/TTS engine by editing the corresponding section of `voiceagent.py`.
 - Change what the agent does with server data by modifying the polling handler.
-- Add display pages (battery, Wi-Fi, transcript) using Pillow and the `st7735` driver.
+- Add display pages (battery, Wi-Fi, transcript, richer graphics) using Pillow and `luma.lcd`; the 240x320 panel has far more room than a small 128x160 LCD.
+- Use the TFT's resistive touch layer (XPT2046 on SPI CE1) for on-screen buttons.
 - Remap the controller's buttons or add more by editing `BTN_PINS` and the matching `Keyboard.press(...)` calls in the firmware. Because it is plain USB HID, no Pi-side change is needed.
 - Replace the mic amp with an I2S MEMS mic (e.g. INMP441) for a fully digital input path.
 
@@ -323,15 +341,7 @@ This is the part that goes beyond a "works on my desk" demo:
 | Controller does nothing | Native USB port (not the UART port) is plugged into the Pi; USB Mode set to USB-OTG (TinyUSB); `lsusb` shows the device; buttons wired to GND |
 | Buttons fire twice | Add a longer debounce (increase `delay(10)` or add per-button timers) |
 | Joystick drifts or keys stick | Increase `DEADZONE` or measure the real centre instead of assuming 2048 |
-| Blank/white LCD | SPI enabled, CS on GPIO8, backlight on GPIO22, DC/RESET pins correct |
-| Garbled or shifted LCD image | Resolution constants patched to 124x160 |
+| Blank/white TFT | SPI enabled, driver set to `ili9341`, CS on GPIO8, DC on GPIO24, RESET on GPIO25, backlight on GPIO22, panel powered |
+| Garbled, mirrored or rotated TFT image | Check `rotate` setting and SPI speed (lower `bus_speed_hz` if noisy) |
 
 ---
-
-## License
-
-<TODO: MIT / Apache-2.0 / etc.>
-
-## Team
-
-<TODO: names and roles>
